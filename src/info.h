@@ -28,7 +28,7 @@
 	"Info about playing\n"                                                                 \
 	"-------------------\n"                                                                \
 	"At the beginning of the game computer chooses a secret code consisting of\n"          \
-	"4 unique colors in a random row. Your goal is to find this code and to do so\n"       \
+	"4 unique colors in random order. Your goal is to find this code and to do so\n"       \
 	"you have a specified number of tries. For each try computer gives you some\n"         \
 	"information. For each color that exists in your code in exact the same position\n"    \
 	"as in computer's secret code a red mark will be sown and for each color in your\n"    \
