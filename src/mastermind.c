@@ -429,7 +429,8 @@ int main(void)
 	char *tokens[2] = {NULL};         /* to be filled by s_tokenize() */
 	                                  /* with NUL-terminated string tokens*/
 	struct setcommand setcmd;
-	int round;                    /* rounds counter */
+	int round;                        /* rounds counter */
+	bool haswon;                      /* indicates if player won */
 
 	/* initialize pseudo-random seed */
 	srand((unsigned) time(NULL));
@@ -439,67 +440,67 @@ int main(void)
 
 	start_menu();
 
-game_start: /* optionally multiple games */
-	/* initialize tables */
-	memset(pegstable, COL_NULL, sizeof(pegstable));
-	memset(keypegstable, COL_NULL, sizeof(keypegstable));
+	do { /* optionally multiple games */
 
-	set_secret_code(secrcode, NCOLS, MAX_COLORS);
-	display_data(pegstable, keypegstable, NROWS);
+		/* initialize tables */
+		memset(pegstable, COL_NULL, sizeof(pegstable));
+		memset(keypegstable, COL_NULL, sizeof(keypegstable));
 
-	round = 0;
-	while (round < NROWS) {
-		#if DEBUG
-			print_secret_code(secrcode, NCOLS);
-		#endif
-		printf("> ");
-		fgets(input, sizeof(input), stdin);
-		s_tolower(input);  /* lowerize input */
+		set_secret_code(secrcode, NCOLS, MAX_COLORS);
+		display_data(pegstable, keypegstable, NROWS);
 
-		switch (input_parser(input, &setcmd)) {
-		case CMD_SET:
-			if (set_peg(setcmd, pegstable[round], NCOLS)) {
-				display_data(pegstable, keypegstable, NROWS);
-			}
+		round = 0;
+		haswon = false;
+		while (round < NROWS && !haswon) {
+			#if DEBUG
+				print_secret_code(secrcode, NCOLS);
+			#endif
+			printf("> ");
+			fgets(input, sizeof(input), stdin);
+			s_tolower(input);  /* lowerize input */
 
-			break;
-		case CMD_CHECK:
-			if (cancheck(pegstable[round], NCOLS)) {
-				if (set_keypegs(secrcode, pegstable[round],
-				    keypegstable[round], NCOLS)) {
-					display_data(pegstable, keypegstable,
-					             NROWS);
-					goto game_end;
+			switch (input_parser(input, &setcmd)) {
+			case CMD_SET:
+				if (set_peg(setcmd, pegstable[round], NCOLS))
+					display_data(pegstable,
+					             keypegstable, NROWS);
+				break;
+			case CMD_CHECK:
+				if (cancheck(pegstable[round], NCOLS)) {
+					haswon = set_keypegs(secrcode,
+					                     pegstable[round],
+					                     keypegstable[round],
+					                     NCOLS);
+					round++;
+					display_data(pegstable,
+					             keypegstable, NROWS);
+				} else {
+					puts("There are empty fields.");
 				}
-				round++;
-				display_data(pegstable, keypegstable, NROWS);
-			} else {
-				puts("There are empty fields.");
+				break;
+			case CMD_EXIT:
+				goto exit_success;
+				break;
+			case CMD_INVALID:
+			default:
+				puts("Invalid command.");
+				break;
 			}
-			break;
-		case CMD_EXIT:
-			goto exit_success;
-			break;
-		case CMD_INVALID:
-		default:
-			puts("Invalid command.");
-			break;
 		}
-	}
-game_end:
-	if (round == NROWS) {
-		puts("You lost.");
-		print_secret_code(secrcode, NCOLS);
-	} else {
-		puts("Congratulations! You found my secret code!");
-	}
 
-	puts("Do you want to play again? (y/n)");
-	fgets(input, sizeof(input), stdin);
-	s_tokenize(input, tokens, 2, " \n");
-	if (tokens[0] != NULL
-	&& (!strcmp(tokens[0], "y") || !strcmp(tokens[0], "yes")))
-		goto game_start;
+		if (haswon) {
+			puts("Congratulations! You found my secret code!");
+		} else {
+			puts("You lost.");
+			print_secret_code(secrcode, NCOLS);
+		}
+
+		puts("Do you want to play again? (y/n)");
+		fgets(input, sizeof(input), stdin);
+		s_tokenize(input, tokens, 2, " \n");
+
+	} while (tokens[0] != NULL
+	&& (!strcmp(tokens[0], "y") || !strcmp(tokens[0], "yes")));
 
 exit_success:
 	/* restore console's color-state, as saved with CONOUT_INIT() */
