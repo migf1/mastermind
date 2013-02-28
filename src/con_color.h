@@ -12,12 +12,9 @@
 
 #include <string.h>
 
-#if defined(__linux__) || defined(__unix__) || defined(__unix)      \
-|| defined(__CYGWIN__) || defined(__GNU__) || defined(__MINGW32__)  \
-|| defined(__MINGW64__)
+#if defined(__linux__) || defined(__unix__) || defined(__unix)
 	#define CON_COLOR_ANSI
-
-#elif defined(_WIN32) || defined(_WIN64) || defined(__WINDOWS__)   \
+#elif defined(_WIN32) || defined(_WIN64) || defined(__WINDOWS__) \
 || defined(__TOS_WIN__)
 	#define CON_COLOR_WIN32
 #endif
