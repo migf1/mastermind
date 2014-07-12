@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-W -Wextra -Wall -std=c99 -c
+CFLAGS=-W -Wextra -Wall -std=c99 -s -O2 -c
 
 mastermind: mastermind.o misc.o
 	$(CC) -o mastermind mastermind.o misc.o
