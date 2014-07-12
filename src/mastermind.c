@@ -356,13 +356,18 @@ enum commandid input_parser(char *input, struct setcommand *setcmd)
 
 	if (!ntokens || ntokens > 2) /* no command with more than 2 arguments */
 		return CMD_INVALID;
-	if (!strcmp("check", tokens[0]) || !strcmp("exit", tokens[0])) {
-		if (ntokens != 1)
-			return CMD_INVALID;
+	if (ntokens == 1) {
 		if (!strcmp("check", tokens[0]))
 			return CMD_CHECK;
-		return CMD_EXIT;
+		else if (!strcmp("exit", tokens[0]))
+			return CMD_EXIT;
+		return CMD_INVALID;
 	}
+
+	/* set command must have exactly 2 args */
+	if (ntokens != 2)
+		return CMD_INVALID;
+
 	errno = 0;
 	setcmd->pos = strtol(tokens[0], &p, 10);
 	/* check if first argument is a valid integer */
