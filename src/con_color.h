@@ -90,7 +90,7 @@
 			SetConsoleTextAttribute(hStdout, csbiTemp.wAttributes); \
 			memcpy(&csbiCurrent, &csbiTemp,                         \
 			       sizeof(CONSOLE_SCREEN_BUFFER_INFO));             \
-		}
+		}while(0)
 
 	#define CONOUT_PRINTF(fg, ...)                              \
 		do {                                                \
