@@ -20,420 +20,602 @@
 #include <stdlib.h>    /* srand(), rand(), system(), strtol(), exit() */
 #include <stdbool.h>   /* bool, true, false */
 #include <time.h>      /* time() */
+#include <ctype.h>     /* tolower() */
 #include <errno.h>
 
 #include "con_color.h"
+#include "colors.h"
 #include "misc.h"
 #include "info.h"
 
-#define DEBUG           0
+#define DEBUG              1
 
-#define MAX_INPUT     255  /* max accepted length of stdin */
-#define MAXSLEN_COLOR  20  /* max string length */
+/* Dimensions of the board */
+#define NROWS              10
+#define NCOLS              4
 
-#define NROWS          10  /* number of rows */
-#define NCOLS           4  /* number of columns */
+/* Output-strings for displaying pegs and keypegs */
+#define PEG_OUT            "@@"
+#define KPEG_OUT           "*"
+#define KPEG_OUT_EMPTY     "."
 
-#define PEG_SYM      "@@"  /* peg representing symbol */
-#define KEYPEG_SYM    "!"  /* key peg representing symbol */
-#define KEYPEG_NULL   "."  /* null key peg representing symbol */
+/* Keypeg color-indices for exact-matches,
+ * approximate matches, and no-matches.
+ */
+#define KPEG_EXACT         IDX_RED
+#define KPEG_APPROX        IDX_YELLOW
+#define KPEG_NOMATCH       IDX_NOCOLOR
 
+/* A MasterMindCode is a sequence of NCOLS color-indices. */
+typedef enum ColorIdx MMCode[NCOLS];
 
-typedef int Color;
-
-enum colorid {
-	COL_INVALID = -2,
-	COL_NULL = -1,
-	COL_WHITE = 0,
-	COL_BLACK,
-	COL_RED,
-	COL_GREEN,
-	COL_YELLOW,
-	COL_BLUE,
-	COL_MAGENTA,
-	COL_CYAN,
-	MAX_COLORS  /* their total count */
-};
-
-enum commandid {
+/* For handling commands given by the user during the game. */
+enum CmdId {
+	CMD_INVALID_DUP_COLORS = -2,
 	CMD_INVALID = -1,
-	CMD_SET,
-	CMD_CHECK,
-	CMD_EXIT
+	CMD_QUIT,
+	CMD_SHOW_GUESS,
+	CMD_CHECK_GUESS,
+	CMD_SHOW_AND_CHECK_GUESS,
+	CMD_HELP,
+	CMD_CREDITS
 };
 
-struct setcommand {
-	int   pos;  /* position in row */
-	enum colorid color;
+enum ErrId {
+	ERR_NONE = 0,
+	ERR_NULL_ARG,
+	ERR_INV_ARG,
+	ERR_DUP_COLORS
 };
 
-
-/*
- * strtocolorid:
- *    Convert a c-string to color id and return it.
+/* The board consists of 2 sub-boards:
+ * one for pegs & one for keypegs
  */
-enum colorid strtocolorid(char *colorstr)
+typedef struct Board {
+	MMCode pegs[NROWS];
+	MMCode kpegs[NROWS];
+} Board;
+
+/* --------------------------------------------------------------
+ * void show_help():
+ *
+ * --------------------------------------------------------------
+ */
+void show_help( void )
 {
-	if (!strcmp(colorstr, "white"))
-		return COL_WHITE;
-	else if (!strcmp(colorstr, "black"))
-		return COL_BLACK;
-	else if (!strcmp(colorstr, "red"))
-		return COL_RED;
-	else if (!strcmp(colorstr, "green"))
-		return COL_GREEN;
-	else if (!strcmp(colorstr, "yellow"))
-		return COL_YELLOW;
-	else if (!strcmp(colorstr, "blue"))
-		return COL_BLUE;
-	else if (!strcmp(colorstr, "magenta"))
-		return COL_MAGENTA;
-	else if (!strcmp(colorstr, "cyan"))
-		return COL_CYAN;
-	else if (!strcmp(colorstr, "null"))
-		return COL_NULL;
-	else
-		return COL_INVALID;
+	clear_screen();
+	puts( INFO_ABOUT_PLAYING );
+	press_enter();
 }
 
-/*
- * print_peg:
- *    Display a peg symbol with the suitable foreground color.
+/* --------------------------------------------------------------
+ * void show_credits():
+ *
+ * --------------------------------------------------------------
  */
-void print_peg(Color peg)
+void show_credits( void )
 {
-	register unsigned int i;
+	clear_screen();
+	printf(
+		CREDITS,
+		APP_NAME,
+		APP_VERSION,
+		AUTHOR,
+		AUTHOR_MAIL,
+		APP_NAME,
+		AUTHOR
+		);
+	press_enter();
+}
 
-	switch(peg) {
-	case COL_WHITE:
-		CONOUT_PRINTF(FG_WHITE, PEG_SYM);
-		break;
-	case COL_BLACK:
-		CONOUT_PRINTF(FG_DARKGRAY, PEG_SYM);
-		break;
-	case COL_RED:
-		CONOUT_PRINTF(FG_DARKRED, PEG_SYM);
-		break;
-	case COL_GREEN:
-		CONOUT_PRINTF(FG_DARKGREEN, PEG_SYM);
-		break;
-	case COL_YELLOW:
-		CONOUT_PRINTF(FG_DARKYELLOW, PEG_SYM);
-		break;
-	case COL_BLUE:
-		CONOUT_PRINTF(FG_DARKBLUE, PEG_SYM);
-		break;
-	case COL_MAGENTA:
-		CONOUT_PRINTF(FG_DARKMAGENTA, PEG_SYM);
-		break;
-	case COL_CYAN:
-		CONOUT_PRINTF(FG_DARKCYAN, PEG_SYM);
-		break;
-	case COL_NULL:
-	default:
-		for (i = 0; i < strlen(PEG_SYM); i++)
+/* --------------------------------------------------------------
+ * void mmcode_init():
+ *
+ * Initialize the given mastermind-code with no-color indices.
+ *
+ * NOTE: Since no-color indices are non-0 ones,
+ *       using memset() is not a good idea.
+ * --------------------------------------------------------------
+ */
+void mmcode_init( MMCode mmcode )
+{
+	for (int i=0; i < NCOLS; i++) {
+		mmcode[i] = IDX_NOCOLOR;
+	}
+}
+
+/* --------------------------------------------------------------
+ * int mmcode_lookup():
+ *
+ * Lookup in the specified mastermind-code (mmcode) for the specified
+ * color-index element (elem). Return the element's 0-based index inside
+ * the mastermind-code, or -1 if the element was not found.
+ * --------------------------------------------------------------
+ */
+int mmcode_lookup( const MMCode mmcode, enum ColorIdx elem )
+{
+
+	for (size_t i=0; i < NCOLS; i++) {
+		if  ( elem >= 0 && elem == mmcode[i] ) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* --------------------------------------------------------------
+ * enum ErrId mmcode_set_from_string():
+ *
+ * Set all elements of the specified mastermind-code (mmcode)
+ * according to the contents of the specified c-string (string).
+ * On error, mmcode gets initialized and an appropriate error-code
+ * is returned. On success, ERR_NONE is returned and mmcode contains
+ * the color-indices that correspond to the color-codes contained in
+ * the c-string.
+ *
+ * NOTE: The c-string is expected to contain color-codes, as they
+ *       defined in the file: colors.c (they are actually ascii-codes
+ *       that uniquely identify each color).
+ * --------------------------------------------------------------
+ */
+enum ErrId mmcode_set_from_string(
+	MMCode      mmcode,
+	const char  *string,
+	const Color *colors
+	)
+{
+	enum ColorIdx temp;
+
+	/* start fresh */
+	mmcode_init( mmcode );
+
+	if ( NULL == string || NULL == colors ) {
+		return ERR_NULL_ARG;
+	}
+	if ( NCOLS != strlen(string) ) {
+		return ERR_INV_ARG;
+	}
+
+	for (size_t i=0; i < NCOLS; i++)
+	{
+		temp = colors_lookup_code(colors, string[i] );
+		if  ( IDX_INVALID == temp ) {
+			return ERR_INV_ARG;
+		}
+		if ( -1 != mmcode_lookup(mmcode, temp) ) {
+			return ERR_DUP_COLORS;
+		}
+		mmcode[i] = temp;
+	}
+
+	return ERR_NONE;
+}
+
+/* --------------------------------------------------------------
+ * bool mmcode_set_randomly():
+ *
+ * Set a random secret code. Each color appears only once.
+ * --------------------------------------------------------------
+ */
+bool mmcode_set_randomly( MMCode mmcode, const Color *colors )
+{
+	int i;
+	enum ColorIdx r;
+
+	if ( NULL == colors ) {
+		return false;
+	}
+
+	/* start fresh */
+	mmcode_init( mmcode );
+
+	/* set NCOLS unique color-indices randomly inside mmcode */
+	for (i=0; i < NCOLS; i++)
+	{
+		r = colors_get_random_index(colors);
+		if ( -1 != mmcode_lookup(mmcode, r) ) {
+			--i;
+			continue;
+		}
+		mmcode[i] = r;
+	}
+
+	return true;
+}
+
+/* --------------------------------------------------------------
+ * void mmcode_copy():
+ *
+ * --------------------------------------------------------------
+ */
+void mmcode_copy( MMCode dst, MMCode src )
+{
+	memmove( dst, src, NCOLS * sizeof(enum ColorIdx) );
+}
+
+/* --------------------------------------------------------------
+ * void mmcode_is_full():
+ *
+ * Return true if the specified mastermind-code contains valid
+ * color-indices, and it has no empty slots.
+ * --------------------------------------------------------------
+ */
+bool mmcode_is_full( MMCode mmcode )
+{
+	for (size_t i=0; i < NCOLS; i++) {
+		if ( IDX_INVALID == mmcode[i] || IDX_NOCOLOR == mmcode[i] ) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/* --------------------------------------------------------------
+ * bool mmcode_set_as_hint():
+ *
+ * Set the mastermind-code specified by the 1st argument (hint), as
+ * a game-hint resulting from comparing the mastermind-codes specified
+ * by the last two arguments( mmc1 and mmc2, respectively).
+ *
+ * Return true if all the color-indices of mmc1 and mmc2 are valid,
+ * non-empty and their values & order match exactly.
+ * --------------------------------------------------------------
+ */
+bool mmcode_set_as_hint( MMCode hint, MMCode mmc1, MMCode mmc2 )
+{
+	int nexact, napprox;   /* count of exact & approximate matches */
+	int i,j;
+
+	/* Demand valid, non-empty color-indices in all positions
+	 * of both mmc1 & mmc2.
+	 */
+	if ( !mmcode_is_full(mmc1) || !mmcode_is_full(mmc2) ) {
+		return false;
+	}
+
+	/* Count exact & approximate matches between mmc1 and mmc2. */
+	nexact = napprox = 0;
+	for (int i=0; i < NCOLS; i++)
+	{
+		for (j=0; j < NCOLS; j++)
+		{
+			if ( mmc1[i] == mmc2[j] ) {
+				if (i == j) {
+					nexact++;   /* exact match */
+				}
+				else {
+					napprox++;  /* approximate match */
+				}
+			}
+		}
+	}
+
+	/* Set the hint mmcode by filling-in exact-matches first,
+	 * then followed by approximate-matches. Any remaining
+	 * slots to the end of the mmcode are set to no-match.
+	 */
+	for (i=0; i < nexact; i++) {
+		hint[i] = KPEG_EXACT;
+	}
+	for (i=nexact; i < nexact + napprox; i++) {
+		hint[i] = KPEG_APPROX;
+	}
+	for (j=i; j < NCOLS; j++) {
+		hint[j] = KPEG_NOMATCH;
+	}
+
+	return nexact == NCOLS;
+}
+
+/* --------------------------------------------------------------
+ * bool init_board():
+ *
+ * --------------------------------------------------------------
+ */
+bool init_board( Board *board, const Color *colors )
+{
+	if ( NULL == board || NULL == colors ) {
+		return false;
+	}
+
+	for (int i=0; i < NROWS; i++) {
+		mmcode_init( board->pegs[i] );
+		mmcode_init( board->kpegs[i] );
+	}
+	return true;
+}
+
+/* --------------------------------------------------------------
+ * void draw_single_peg():
+ *
+ * Display the specified color-index as a peg.
+ *
+ * The output is a PEG_OUT string, using the foreground color that
+ * corresponds to the color-index (1st argument) in the specified
+ * list of colors (2nd argument).
+ *
+ * If the color-index is invalid or a no-color one, then all chars
+ * of PEG_OUT are displayed as un-colorized spaces.
+ * --------------------------------------------------------------
+ */
+void draw_single_peg( enum ColorIdx peg, const Color *colors )
+{
+	if ( peg < 0 ) {  /* either IDX_NOCOLOR or IDX_INVALID */
+		for (size_t i=0; i < strlen(PEG_OUT); i++) {
 			putchar(' ');
-		break;
+		}
+		fflush( stdout );
+		return;
 	}
+
+	const ConSingleColor *fg = colors_get_fg_at_idx( colors, peg );
+	if ( NULL == fg ) {
+		for (size_t i=0; i < strlen(PEG_OUT); i++) {
+			putchar(' ');
+		}
+		fflush( stdout );
+		return;
+	}
+
+	CONOUT_PRINTF( *fg, BG_DEFAULT, PEG_OUT );
 }
 
-/*
- * print_keypeg:
- *    Display a keypeg symbol with the suitable foreground color.
+/* --------------------------------------------------------------
+ * void draw_single_kpeg():
+ *
+ * Display the specified color-index as a keypeg.
+ *
+ * The output is either a KPEG_OUT or a KPEG_OUT_EMPTY string,
+ * depending on whether the value of color-index (kpeg) dictates
+ * a match (expected to be KPEG_EXACT or KPEG_APPROX) or not,
+ * respectively.
+ *
+ * In the former case, KPEG_OUT is displayed using the foreground
+ * color that corresponds to the color-index (1st argument) in the
+ * specified list of colors (2nd argument).
+ *
+ * In the latter case, or if color-index is invalid, KPEG_OUT_EMPTY
+ * is displayed un-colorized.
+ * --------------------------------------------------------------
  */
-void print_keypeg(Color keypeg)
+void draw_single_kpeg( enum ColorIdx kpeg, const Color *colors )
 {
-	switch(keypeg) {
-	case COL_RED:
-		CONOUT_PRINTF(FG_DARKRED, KEYPEG_SYM);
-		break;
-	case COL_YELLOW:
-		CONOUT_PRINTF(FG_DARKYELLOW, KEYPEG_SYM);
-		break;
-	case COL_NULL:
-	default:
-		printf(KEYPEG_NULL);
-		break;
+	const ConSingleColor *fg = colors_get_fg_at_idx( colors, kpeg );
+	if ( KPEG_NOMATCH == kpeg || NULL == fg ) {
+		printf( "%s", KPEG_OUT_EMPTY);
+		fflush( stdout );
+		return;
 	}
+
+	CONOUT_PRINTF( *fg, BG_DEFAULT, KPEG_OUT );
 }
 
-/*
- * print_table:
- *    Display game board with pegs and key pegs.
+/* --------------------------------------------------------------
+ * bool draw_board():
+ *
+ * --------------------------------------------------------------
  */
-void print_table(Color pegs[][NCOLS], Color keypegs[][NCOLS], int rows)
+bool draw_board( const Board *board, const Color *colors )
 {
-	register int i, j;
+	int i,j;
 
-	for (i = 0; i < rows; i++) {
-		printf("%2d. ", i + 1);
+	if ( NULL == board || NULL == colors ) {
+		return false;
+	}
+
+	for (i=0; i < NROWS; i++)
+	{
+		printf( "%2d. ", i+1 );
+
 		/* print pegs */
-		for (j = 0; j < NCOLS; j++) {
+		for (j=0; j < NCOLS; j++) {
 			putchar('|');
-			print_peg(pegs[i][j]);
+			draw_single_peg( board->pegs[i][j], colors );
 		}
 		printf("|  ");
-		/* print key pegs */
-		for (j = 0; j < NCOLS; j++) {
-			print_keypeg(keypegs[i][j]);
+
+		/* print keypegs */
+		for (j=0; j < NCOLS; j++) {
+			draw_single_kpeg( board->kpegs[i][j], colors );
 		}
-		printf("\n    -------------\n");
+
+		puts( "\n    -------------" );
 	}
+	return true;
 }
 
-/*
- * print_available_colors:
- *    Print all color's names and a colored peg of the corresponding color.
+/* --------------------------------------------------------------
+ * void draw_color_legends():
+ *
+ * Display legends for all colors present in the specified list
+ * of colors.
+ *
+ * The legend of any color consists of a peg output-string colorized
+ * according to the color, followed by the color's non-colorized label.
+ *
+ * The function displays 3 color legends per line.
+ * --------------------------------------------------------------
  */
-void print_available_colors(void)
+void draw_color_legends( const Color *colors )
 {
 	register int i;
-	char *colors[] = {"white", "black", "red", "green", "yellow", "blue",
-	                  "magenta", "cyan"};
+	const ConSingleColor *fg = NULL;
 
-	for (i = 0; i < MAX_COLORS; i++) {
-		printf("%s: ", colors[i]);
-		print_peg(strtocolorid(colors[i]));
-		printf(", ");
-		if (i == 3)
+	for (i=0; i < MAXCOLORS; i++)
+	{
+		fg = colors_get_fg_at_idx(colors, i);
+		CONOUT_PRINTF( *fg, BG_DEFAULT, "%s", PEG_OUT );
+		putchar( ' ' );
+		fflush( stdout );
+		colors_print_label_at_idx( colors, i );
+		putchar( '\t' );
+		fflush( stdout );
+		if (i == 3) {
 			putchar('\n');
+		}
 	}
-	printf("null:\n\n");
+	putchar( '\n' );
 }
 
-/*
- * print_secret_code:
- *    Print cpu's secret code.
+/* --------------------------------------------------------------
+ * void draw_secret():
+ *
+ * Display the secret-code, treating each of its elements as a peg.
+ * --------------------------------------------------------------
  */
-void print_secret_code(Color secrcode[], int n)
+void draw_secret( MMCode secret, const Color *colors )
 {
-	register int i;
+	int i;
 
-	printf("My secret code was:\n\n");
-	for (i = 0; i < n; i++) {
+	printf( "%s", "The secret-code was: " );
+	fflush( stdout );
+
+	for (i=0; i < NCOLS; i++) {
+		putchar( colors_get_code_at_idx(colors, secret[i]) );
+	}
+	printf( "%s", " -> " );
+	fflush( stdout );
+
+	for (i=0; i < NCOLS; i++) {
 		putchar('|');
-		print_peg(secrcode[i]);
+		draw_single_peg( secret[i], colors );
 	}
 	putchar('|');
-	printf("\n-------------\n");
+	fflush( stdout );
+
+	putchar( '\n' );
 }
 
-/*
- * displa_data:
- *    Just a wrapper to call real display functions.
- */
-void display_data(Color pegs[][NCOLS], Color keypegs[][NCOLS], int n)
-{
-	system(SYSTEM_CLEAR); /* clear screen */
-	print_table(pegs, keypegs, n);
-	print_available_colors();
-}
-
-/*
- * appears_in_row:
- *    Return false if color is unique in its row, else true.
- */
-bool appears_in_row(Color color, Color row[], int n)
-{
-	register int *p;
-
-	for (p = row; p < row + n; p++)
-		if (color == *p)
-			return true;
-
-	return false;
-}
-
-/*
- * set_secret_code:
- *    Set a random secret code for cpu player.
- *    Each color should appear only once.
- */
-void set_secret_code(Color secrcode[], int n, int numcolors)
-{
-	register int i;
-	Color choice;
-
-	for (i = 0; i < n; i++) {
-		do {
-			choice = rand() % numcolors;
-		} while(appears_in_row(choice, secrcode, n));
-		secrcode[i] = choice;
-	}
-}
-
-/*
- * set_peg:
- *    Update the value of rowpegs indicated by setcmd, if requested position
- *    is not out of game board range and requested color doesn't appears
- *    in the same row.
+/* --------------------------------------------------------------
+ * void redraw_screen():
  *
- *    Return true if update succeed, else false.
+ * --------------------------------------------------------------
  */
-bool set_peg(struct setcommand setcmd, Color rowpegs[], int n)
+void redraw_screen(
+	const Board *board,
+	const Color *colors
+	)
 {
-	if (setcmd.pos < 1 || setcmd.pos > n) {
-		puts("Out of range. Not such column.");
-		return false;
-	}
-	if (setcmd.color != COL_NULL && setcmd.color != rowpegs[setcmd.pos-1]
-	&& appears_in_row(setcmd.color, rowpegs, n)) {
-		puts("You can't put the same color twice in a row.");
-		return false;
-	}
-
-	rowpegs[setcmd.pos-1] = setcmd.color;
-	return true;
+	clear_screen();
+	draw_board( board, colors );
+	draw_color_legends( colors );
 }
 
-
-/*
- * set_keypegs:
- *    Check if user's code matches cpu's secret code and update keypegs.
- *    For every user's color that it's in the same position as in secret code
- *    one red peg should be added and for each color that appears in secret
- *    code but it is not in the correct position one yellow peg should be
- *    added. Red pegs must appear first in keypegs array, then yellow pegs,
- *    then null.
+/* --------------------------------------------------------------
+ * enum CmdId parse_cmdline():
  *
- *    Return true if user's code is the same with secret code, else false.
+ * --------------------------------------------------------------
  */
-bool set_keypegs(Color secrcode[], Color pegs[], Color keypegs[], int n)
+enum CmdId parse_cmdline( char *cmdline, Color *colors, MMCode guess )
 {
-	register int i, j;
-	int red = 0, yellow = 0;
+	size_t len;
+	enum ErrId err = ERR_NONE;
 
-	for (i = 0; i < n; i++)
-		for (j = 0; j < n; j++)
-			if (pegs[i] == secrcode[j]) {
-				if (i == j) /* correct position */
-					red++;
-				else
-					yellow++;
-			}
-	/* red pegs first, yellow second */
-	for (i = 0; i < red; i++)
-		keypegs[i] = COL_RED;
-	for (i = red; i < red + yellow; i++)
-		keypegs[i] = COL_YELLOW;
-
-	return red == n;
-}
-
-/*
- * cancheck:
- *    Return true if there are no null fields in rowpegs, else false.
- */
-bool cancheck(Color rowpegs[], int n)
-{
-	register int i;
-
-	for (i = 0; i < n; i++)
-		if (rowpegs[i] == COL_NULL)
-			return false;
-	return true;
-}
-
-/*
- * input_parser:
- *    Parse the command line arguments and check wether they corresponds
- *    to a valid command. For a set command, update setcmd values.
- *
- *    Valid commands are:
- *       - check
- *       - n color, where n is an integer and color matches a color in
- *                  colors[] array. This called as set command.
- *       - exit
- */
-enum commandid input_parser(char *input, struct setcommand *setcmd)
-{
-	/* to be filled by s_tokenize() with NUL-terminated string tokens */
-	char *tokens[3] = {NULL};
-	int ntokens = 0;  /* number of tokens */
-	char *p;          /* to be passed to strtol */
-
-	ntokens = s_tokenize(input, tokens, 3, " \n");
-
-	if (!ntokens || ntokens > 2) /* no command with more than 2 arguments */
-		return CMD_INVALID;
-	if (ntokens == 1) {
-		if (!strcmp("check", tokens[0]))
-			return CMD_CHECK;
-		else if (!strcmp("exit", tokens[0]))
-			return CMD_EXIT;
+	if ( NULL == cmdline ) {
 		return CMD_INVALID;
 	}
 
-	/* set command must have exactly 2 args */
-	if (ntokens != 2)
-		return CMD_INVALID;
+	s_tolower( cmdline );
+	s_trim( cmdline );
 
-	errno = 0;
-	setcmd->pos = strtol(tokens[0], &p, 10);
-	/* check if first argument is a valid integer */
-	if (errno == ERANGE || *p != '\0') /* strtol failed */
-		return CMD_INVALID;
+	if ( 0 == strcmp("quit", cmdline) || 0 == strcmp("q", cmdline)) {
+		return CMD_QUIT;
+	}
+	if ( 0 == strcmp("check", cmdline) ) {
+		return CMD_CHECK_GUESS;
+	}
+	if ( 0 == strcmp("help", cmdline) || 0 == strcmp("h", cmdline) ) {
+		return CMD_HELP;
+	}
+	if ( 0 == strcmp("credits", cmdline) || 0 == strcmp("c", cmdline) ) {
+		return CMD_CREDITS;
+	}
 
-	setcmd->color = strtocolorid(tokens[1]);
-	/* chech if second argument is a known color */
-	if (setcmd->color != COL_INVALID)
-		return CMD_SET;
+	/* is it a plain guess? */
+	len = strlen( cmdline );
+	if ( NCOLS == len )
+	{
+		err = mmcode_set_from_string(guess, cmdline, colors);
+		if ( ERR_DUP_COLORS == err ) {
+			return CMD_INVALID_DUP_COLORS;
+		}
+		if ( ERR_NONE != err ) {
+			return CMD_INVALID;
+		}
+		return CMD_SHOW_GUESS;
+	}
+
+	/* is it a guess with embed check-request? */
+	if ( NCOLS + 2 == len )
+	{
+		if ( 0 != strcmp("-c", &cmdline[len-2]) ) {
+			return CMD_INVALID;
+		}
+
+		len = NCOLS;
+		cmdline[len] = '\0';
+
+		err = mmcode_set_from_string(guess, cmdline, colors);
+		if ( ERR_DUP_COLORS == err ) {
+			return CMD_INVALID_DUP_COLORS;
+		}
+		if ( ERR_NONE != err ) {
+			return CMD_INVALID;
+		}
+		return CMD_SHOW_AND_CHECK_GUESS;
+	}
 
 	return CMD_INVALID;
 }
 
-/*
- * start_menu:
- *    Print available options and prompt user for an option.
- *    Return only when user enters "s".
- *    If user enters "q" terminate program, else display program info.
+/* --------------------------------------------------------------
+ * void do_intro_menu():
+ *
+ * Print available options and prompt user for an option.
+ * Return only when user enters "s".
+ * If user enters "q" terminate program, else display program info.
+ * --------------------------------------------------------------
  */
-void start_menu(void)
+void do_intro_menu( void )
 {
-	char input[MAX_INPUT + 1];  /* to be filled by user's input */
-	char *tokens[2] = {NULL};   /* to be filled by s_tokenize() */
-                                    /* with NUL-terminated string tokens */
-
 	for (;;) {
-		system(SYSTEM_CLEAR);
+		clear_screen();
 		printf(START_MENU, APP_NAME);
 
-		fgets(input, sizeof(input), stdin);
-		s_tolower(input); /* lowerize input */
-		s_tokenize(input, tokens, 2, " \n");
+		int c = tolower( prompt_for_char(NULL) );
+		switch ( c )
+		{
+			case 's':
+				return;
 
-		if (tokens[0] == NULL || tokens[1] != NULL)
-			continue;
+			case 'c':
+				show_credits();
+				break;
 
-		if (!strcmp(tokens[0], "s")) {
-			return;
-		} else if (!strcmp(tokens[0], "c")) {
-			system(SYSTEM_CLEAR);
-			printf(CREDITS, APP_NAME, APP_VERSION, AUTHOR,
-			       AUTHOR_MAIL, APP_NAME, AUTHOR);
-			puts("[Press Enter.]");
-			fgets(input, sizeof(input), stdin);
-		} else if (!strcmp(tokens[0], "i")) {
-			system(SYSTEM_CLEAR);
-			puts(INFO_ABOUT_PLAYING);
-			puts("[Press Enter.]");
-			fgets(input, sizeof(input), stdin);
-		} else if (!strcmp(tokens[0], "q"))
-			exit(EXIT_SUCCESS);
+			case 'h':
+				show_help();
+				break;
+
+			case 'q':
+				exit(EXIT_SUCCESS);
+				break;
+		}
 	}
 }
 
-
-int main(void)
+/* --------------------------------------------------------------
+ * Application's entry point.
+ * --------------------------------------------------------------
+ */
+int main( void )
 {
-	Color pegstable[NROWS][NCOLS];    /* main game board */
-	Color keypegstable[NROWS][NCOLS]; /* key pegs table */
-	Color secrcode[NCOLS];            /* cpu's secret code */
+	Color *colors = NULL;
+	Board board;
+	MMCode secret;
+	MMCode guess;
 
+	enum CmdId cmd = CMD_INVALID;
 	char input[MAX_INPUT + 1];        /* to be filled by user's input */
-	char *tokens[2] = {NULL};         /* to be filled by s_tokenize() */
-	                                  /* with NUL-terminated string tokens*/
-	struct setcommand setcmd;
 	int round;                        /* rounds counter */
 	bool haswon;                      /* indicates if player won */
 
@@ -443,73 +625,100 @@ int main(void)
 	/* save console's color-state and initialize the interface */
 	CONOUT_INIT();
 
-	start_menu();
+	colors = new_colors();
+	if ( NULL == colors ) {
+		goto exit_failure;
+	}
+
+	do_intro_menu();
 
 	do { /* optionally multiple games */
 
-		/* initialize tables */
-		memset(pegstable, COL_NULL, sizeof(pegstable));
-		memset(keypegstable, COL_NULL, sizeof(keypegstable));
-
-		set_secret_code(secrcode, NCOLS, MAX_COLORS);
-		display_data(pegstable, keypegstable, NROWS);
+		init_board( &board, colors );
+		mmcode_set_randomly( secret, colors );
+		mmcode_init( guess );
 
 		round = 0;
 		haswon = false;
-		while (round < NROWS && !haswon) {
-			#if DEBUG
-				print_secret_code(secrcode, NCOLS);
-			#endif
-			printf("> ");
-			fgets(input, sizeof(input), stdin);
-			s_tolower(input);  /* lowerize input */
+		while ( round < NROWS && !haswon )
+		{
 
-			switch (input_parser(input, &setcmd)) {
-			case CMD_SET:
-				if (set_peg(setcmd, pegstable[round], NCOLS))
-					display_data(pegstable,
-					             keypegstable, NROWS);
-				break;
-			case CMD_CHECK:
-				if (cancheck(pegstable[round], NCOLS)) {
-					haswon = set_keypegs(secrcode,
-					                     pegstable[round],
-					                     keypegstable[round],
-					                     NCOLS);
+			redraw_screen( &board, colors );
+#if DEBUG
+			draw_secret( secret, colors );
+#endif
+			prompt_for_string( "> ", input, sizeof(input) );
+			cmd = parse_cmdline( input, colors, guess );
+
+			switch( cmd ) {
+				case CMD_QUIT:
+					goto exit_success;
+
+				case CMD_SHOW_GUESS:
+					mmcode_copy(board.pegs[round], guess);
+					break;
+
+				case CMD_CHECK_GUESS:
+					if ( !mmcode_is_full(guess) ) {
+						break;
+					}
+					/* else fallback */
+				case CMD_SHOW_AND_CHECK_GUESS:
+					haswon = mmcode_set_as_hint(
+							board.kpegs[round],
+							guess,
+							secret
+							);
+					mmcode_copy( board.pegs[round], guess);
+					mmcode_init( guess );
 					round++;
-					display_data(pegstable,
-					             keypegstable, NROWS);
-				} else {
-					puts("There are empty fields.");
-				}
-				break;
-			case CMD_EXIT:
-				goto exit_success;
-				break;
-			case CMD_INVALID:
-			default:
-				puts("Invalid command.");
-				break;
+					break;
+
+				case CMD_CREDITS:
+					show_credits();
+					break;
+
+				case CMD_HELP:
+					show_help();
+					break;
+
+				case CMD_INVALID_DUP_COLORS:
+					puts( "Only guesses with unique colors are allowed." );
+					press_enter();
+					break;
+
+				case CMD_INVALID:
+				default:
+					puts( "invalid command" );
+					press_enter();
+					break;
 			}
+
 		}
 
-		if (haswon) {
-			puts("Congratulations! You found my secret code!");
-		} else {
+		if ( haswon ) {
+			redraw_screen( &board, colors );
+			puts( "Congratulations! You found the secret code!" );
+		}
+		else {
 			puts("You lost.");
-			print_secret_code(secrcode, NCOLS);
+			draw_secret( secret, colors );
 		}
 
-		puts("Do you want to play again? (y/n)");
-		fgets(input, sizeof(input), stdin);
-		s_tokenize(input, tokens, 2, " \n");
-
-	} while (tokens[0] != NULL
-	&& (!strcmp(tokens[0], "y") || !strcmp(tokens[0], "yes")));
+	} while (
+		'y' == tolower(
+			prompt_for_char( "Wanna play again (y/)? ")
+			)
+		);
 
 exit_success:
+	colors_free( colors );
+
 	/* restore console's color-state, as saved with CONOUT_INIT() */
 	CONOUT_RESTORE();
-
 	exit(EXIT_SUCCESS);
+
+exit_failure:
+	CONOUT_RESTORE();
+	exit(EXIT_FAILURE);
 }

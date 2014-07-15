@@ -1,8 +1,7 @@
 #ifndef MISC_H
 #define MISC_H
 
-#include <string.h> /* strtok() */
-#include <ctype.h>  /* tolower() */
+#include <stdbool.h>
 
 #if defined(__linux__) || defined(__unix__) || defined(__unix)
 	#define SYSTEM_CLEAR "clear"
@@ -14,9 +13,15 @@
 	#define SYSTEM_CLEAR ""
 #endif
 
+#define MAX_INPUT     255  /* max accepted length of stdin */
 
-char *s_tolower(char *s);
-int s_tokenize(char *s, char *tokens[], int ntoks, const char *delims);
+void  clear_screen( void );
+void  press_enter( void );
+char  *s_tolower(char *s);
+int   s_tokenize(char *s, char *tokens[], int ntoks, const char *delims);
+char  *s_trim( char *s );
+bool  prompt_for_string( const char *prompt, char *str, const size_t maxsz );
+int   prompt_for_char( const char *prompt );
 
 #endif
 
