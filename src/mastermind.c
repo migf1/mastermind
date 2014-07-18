@@ -28,7 +28,7 @@
 #include "misc.h"
 #include "info.h"
 
-#define DEBUG              1
+#define DEBUG              0
 
 /* Dimensions of the board */
 #define NROWS              10
@@ -54,9 +54,9 @@ enum CmdId {
 	CMD_INVALID_DUP_COLORS = -2,
 	CMD_INVALID = -1,
 	CMD_QUIT,
-	CMD_SHOW_GUESS,
+	CMD_REVIEW_GUESS,
 	CMD_CHECK_GUESS,
-	CMD_SHOW_AND_CHECK_GUESS,
+	CMD_REVIEW_AND_CHECK_GUESS,
 	CMD_HELP,
 	CMD_CREDITS
 };
@@ -98,12 +98,23 @@ void show_credits( void )
 	clear_screen();
 	printf(
 		CREDITS,
+
 		APP_NAME,
+
+		/* modified game */
 		APP_VERSION,
-		AUTHOR,
-		AUTHOR_MAIL,
-		APP_NAME,
-		AUTHOR
+		AUTHOR, AUTHOR_MAIL,
+		GITHUB,
+		AUTHOR,      // copyright
+
+		/* original game */
+		ORG_APP_VERSION,
+		ORG_AUTHOR, ORG_AUTHOR_MAIL,
+		ORG_GITHUB,
+		ORG_AUTHOR,  // copyright
+
+		/* license */
+		APP_NAME
 		);
 	press_enter();
 }
@@ -326,6 +337,39 @@ bool init_board( Board *board, const Color *colors )
 }
 
 /* --------------------------------------------------------------
+ * void draw_single_peg_as_code():
+ *
+ * Display the specified color-index as a colorized color-code.
+ *
+ * The output is the code of the specified color-index, using the
+ * foreground color that corresponds to that color-index (1st argument)
+ * in the specified list of colors (2nd argument).
+ *
+ * If the color-index is invalid or a no-color one, then
+ * a non-colorized blank-space is being outputted instead.
+ * --------------------------------------------------------------
+ */
+void draw_single_peg_as_code( enum ColorIdx peg, const Color *colors )
+{
+	const ConSingleColor *fg = NULL;
+
+	if ( peg < 0 ) {  /* either IDX_NOCOLOR or IDX_INVALID */
+		putchar( ' ' );
+		fflush( stdout );
+		return;
+	}
+
+	fg = colors_get_fg_at_idx( colors, peg );
+	if ( NULL == fg ) {
+		putchar( ' ' );
+		fflush( stdout );
+		return;
+	}
+
+	CONOUT_PUTCHAR( *fg, BG_DEFAULT, colors_get_code_at_idx(colors,peg) );
+}
+
+/* --------------------------------------------------------------
  * void draw_single_peg():
  *
  * Display the specified color-index as a peg.
@@ -413,6 +457,14 @@ bool draw_board( const Board *board, const Color *colors )
 			draw_single_peg( board->pegs[i][j], colors );
 		}
 		printf("|  ");
+		fflush( stdout );
+
+		/* print pegs as color-codes */
+		for (j=0; j < NCOLS; j++) {
+			draw_single_peg_as_code( board->pegs[i][j], colors );
+		}
+		printf("  ");
+		fflush( stdout );
 
 		/* print keypegs */
 		for (j=0; j < NCOLS; j++) {
@@ -460,27 +512,29 @@ void draw_color_legends( const Color *colors )
 /* --------------------------------------------------------------
  * void draw_secret():
  *
- * Display the secret-code, treating each of its elements as a peg.
+ * Display the secret-code, first showing its elements as a pegs
+ * then showing its elements as color-codes.
  * --------------------------------------------------------------
  */
 void draw_secret( MMCode secret, const Color *colors )
 {
 	int i;
 
-	printf( "%s", "The secret-code was: " );
+	printf( "%s", "Secret-code: " );
 	fflush( stdout );
 
-	for (i=0; i < NCOLS; i++) {
-		putchar( colors_get_code_at_idx(colors, secret[i]) );
-	}
-	printf( "%s", " -> " );
-	fflush( stdout );
-
+	/* pegs */
 	for (i=0; i < NCOLS; i++) {
 		putchar('|');
 		draw_single_peg( secret[i], colors );
 	}
-	putchar('|');
+	printf( "%s", "| " );
+	fflush( stdout );
+
+	/* color-codes */
+	for (i=0; i < NCOLS; i++) {
+		draw_single_peg_as_code( secret[i], colors );
+	}
 	fflush( stdout );
 
 	putchar( '\n' );
@@ -542,13 +596,15 @@ enum CmdId parse_cmdline( char *cmdline, Color *colors, MMCode guess )
 		if ( ERR_NONE != err ) {
 			return CMD_INVALID;
 		}
-		return CMD_SHOW_GUESS;
+		return CMD_REVIEW_AND_CHECK_GUESS;
 	}
 
-	/* is it a guess with embed check-request? */
+	/* is it a guess with embed review-request? */
 	if ( NCOLS + 2 == len )
 	{
-		if ( 0 != strcmp("-c", &cmdline[len-2]) ) {
+		if ( 0 != strcmp("-r", &cmdline[len-2])
+		&& 0 != strcmp("-R", &cmdline[len-2])
+		){
 			return CMD_INVALID;
 		}
 
@@ -562,7 +618,7 @@ enum CmdId parse_cmdline( char *cmdline, Color *colors, MMCode guess )
 		if ( ERR_NONE != err ) {
 			return CMD_INVALID;
 		}
-		return CMD_SHOW_AND_CHECK_GUESS;
+		return CMD_REVIEW_GUESS;
 	}
 
 	return CMD_INVALID;
@@ -654,7 +710,7 @@ int main( void )
 				case CMD_QUIT:
 					goto exit_success;
 
-				case CMD_SHOW_GUESS:
+				case CMD_REVIEW_GUESS:
 					mmcode_copy(board.pegs[round], guess);
 					break;
 
@@ -663,7 +719,7 @@ int main( void )
 						break;
 					}
 					/* else fallback */
-				case CMD_SHOW_AND_CHECK_GUESS:
+				case CMD_REVIEW_AND_CHECK_GUESS:
 					haswon = mmcode_set_as_hint(
 							board.kpegs[round],
 							guess,

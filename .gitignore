@@ -1,2 +1,6 @@
 *.o
 src/mastermind
+/src/_bak
+/src/mastermind.exe
+/src/test.exe
+/README
