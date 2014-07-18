@@ -3,10 +3,10 @@ Mastermind
 
 A slightly twisted, cross-platform, CLI implementation of the
 Mastermind game, for Windows, Unix, Linux and MacOSX. Written
-in C99, forked from [Ilias Stamatis's](https://github.com/Ilias95/mastermind) original version..
+in C99, forked from **[Ilias Stamatis's](https://github.com/Ilias95/mastermind)** original version..
 
 Some screen-shots are available in the *ss/* directory (screen-shots from
-Windows are taken with the `Lucida Console` font loaded in the console).
+Windows are taken with the *Lucida Console* font loaded in the console).
 
 
 Gameplay
@@ -21,20 +21,21 @@ unique colors. Your task is to find the secret-code in a predefined number
 of tries. On each try, you enter your guess and the computer responds with
 hints, next to your guess.
 
-**Red** hints for exact-position-matches are shown first, followed by **Yellow**
-hints for different-position-matches. No hints are shown for non-matched
+**Red hints** for exact-position-matches are shown first, followed by **Yellow**
+**hints** for different-position-matches. **No hints** are shown for non-matched
 colors. You win if you guess the secret-code before exhausting the board.
 
 All available colors are listed below the game-board. Specify a **guess** by
 typing together the indicators of the desired colors (the ones surrounded
 by parentheses). For example, if your guess is *white-black-red-blue*, type
-in: *wbrl* and hit the ENTER key on your keyboard.
+in: `wbrl` and hit the `ENTER` key on your keyboard.
 
-Guesses can be **reviewed** before submitted. Append a *-r* at the end of the
-guess to review it on the board. To submit it, issue the *check* command.
-For example: *wbrl-r* and then *check*
+Guesses can be **reviewed** before submitted. Append a `-r` at the end of
+the guess to review it on the board, without having it checked for hints
+(or example: `wbrl-r`). You may review many guesses this way. To submit
+the currently reviewed guess, issue the `check` command.
 
-Other Commands: *q* or *quit* | *h* or *help* | *c* or *credits*
+Other Commands: `q` or `quit` | `h` or `help` | `c` or `credits`
 
 
 Pre-compiled Binaries
@@ -92,11 +93,11 @@ The binary file, called *mastermind*, will be generated inside the
 *src/* directory. You may freely rename and/or move it to any other
 directory.
 
-** Using any IDE/C99-Compiler combination**
+**Using any IDE/C99-Compiler combination**
 
 In your favorite IDE, create a console/terminal project and add to
-it all the `*.c` files found in the *src/* directory. Then enable
-the `C99 support` on the compiler. Finally, `Build & Run` the project.
+it all the *.c* files found in the *src/* directory. Then enable
+*C99 support* on the compiler. Finally, *Build & Run* the project.
 
 
 License
