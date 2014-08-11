@@ -9,7 +9,7 @@
 #define _VALID_IDX(idx)  ( (idx) >= 0 && (idx) < MAXCOLORS )
 
 struct _Color {
-	const char *label;  /* has a '&' before the char to be used as code*/
+	const char *label;  /* has a '&' before the char to be used as code */
 	int code;           /* ascii-code uniquely identifying this color */
 	ConSingleColor fg;  /* foreground color to be displayed */
 };

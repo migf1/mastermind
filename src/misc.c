@@ -46,59 +46,70 @@ void press_enter( void )
 
 	printf( "%s", "Press Enter..." );
 	fflush( stdout );
-	while ( '\n' != (c=getchar()) && EOF != c ) {
+	while ( '\n' != (c = getchar()) && EOF != c ) {
 		;  /* void */
 	}
 }
 
-/*
- * s_tolower:
- *    Convert all characters of a c-string to lowercase.
- *    Return the converted string on success, else NULL.
+/* --------------------------------------------------------------
+ * char *s_tolower():
+ *
+ * Convert all characters of a c-string to lowercase.
+ * Return the converted string on success, else NULL.
+ * --------------------------------------------------------------
  */
-char *s_tolower(char *s)
+char *s_tolower( char *s )
 {
 	char *cp;
 
 	/* sanity checks */
-	if ( NULL == s )
+	if ( NULL == s ) {
 		return NULL;
-	if (!*s)
+	}
+	if ( '\0' == *s ) {
 		return s;
+	}
 
-	for (cp=s; (*cp=tolower(*cp)); cp++)
+	for (cp=s; (*cp = tolower(*cp)); cp++) {
 		; /* void */
+	}
 
 	return s;
 }
 
-/*
- * s_tokenize:
- *    Tokenize a c-string, into variable size tokens.
- *    Return the number of tokens which s was broken to on success,
- *    else 0.
+/* --------------------------------------------------------------
+ * int s_tokenize():
+ *
+ * Tokenize a c-string, into variable size tokens.
+ * Return the number of tokens which s was broken to on success,
+ * else 0.
+ * --------------------------------------------------------------
  */
-int s_tokenize(char *s,        /* mutable string */
-               char *tokens[], /* array of strings, to be filled by the
-                                 function with NUL-terminated string tokens. */
-               int ntoks,      /* maximum number of desired tokens.  */
-               const char *delims /* string consisting of the desired
-                                     delimiter characters */
-)
+int s_tokenize(
+	char *s,        /* mutable c-string */
+	char *tokens[], /* array be filled with NUL-terminated string tokens */
+	int ntoks,      /* maximum number of desired tokens */
+	const char *delims /* c-string with the desired delimiting characters*/
+	)
 {
 	register int i;
 
 	/* sanity checks */
-	if (s  == NULL || tokens == NULL || delims == NULL
-	|| !*s || !*delims || ntoks < 1)
+	if ( NULL == s || NULL == tokens || NULL == delims
+	|| '\0' == *s || '\0'== *delims
+	|| ntoks < 1
+	){
 		return 0;
+	}
 
 	tokens[0] = strtok(s, delims);
-	if (tokens[0] == NULL)
+	if ( NULL == tokens[0]  ) {
 		return 0;
+	}
 
-	for (i = 1; i < ntoks && (tokens[i] = strtok(NULL, delims)) != NULL; i++)
+	for (i=1; i < ntoks && NULL != (tokens[i] = strtok(NULL, delims)); i++){
 		; /* void */
+	}
 
 	return i;
 }
@@ -123,7 +134,7 @@ char *s_trim( char *s )
 	}
 
 	/* skip leading blanks, via cp1 */
-	for (cp1=s; isspace( (int)(*cp1)); cp1++) {
+	for (cp1=s; isspace( (int)(*cp1) ); cp1++) {
 		; /* void */
 	}
 
@@ -156,7 +167,7 @@ bool prompt_for_string( const char *prompt, char *str, const size_t maxsz )
 	size_t i = 0;
 	int c = '\0';
 
-	if ( !str || maxsz < 1 ) {
+	if ( NULL == str || maxsz < 1 ) {
 		return false;
 	}
 
@@ -173,7 +184,7 @@ bool prompt_for_string( const char *prompt, char *str, const size_t maxsz )
 	}
 
 	/* if necessary, flush stdin */
-	if ( str[i] && '\n' != str[i] && EOF != str[i]  ) {
+	if ( str[i] && '\n' != str[i] && EOF != str[i] ) {
 		while ( '\n' != (c=getchar()) && EOF != c ) {
 			;  /* void */
 		}
