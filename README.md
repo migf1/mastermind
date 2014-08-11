@@ -10,23 +10,19 @@ The source-code is written in C99, and it was originally forked from v0.1.0
 at **[Ilias Stamatis's](https://github.com/Ilias95/mastermind)** repository.
 
 Some **screen-shots** are available in the `ss/` directory (screen-shots from
-Windows are taken with the *Lucida Console* font loaded in the console).
+Windows are taken with the `Lucida Console` font loaded in the console).
 
 **Changes** added by this fork affect the user interface and they include:
 
 - More tabular listing of colors, below the board.
-
 - Guesses are typed in one go, using single letter color-indicators.
-
 - `-r` may be appended to guesses, in order to review them on the board.
 Giving the `check` command, causes the last reviewed guess to be submitted.
-
 - The commands of the starting menu are also available in the board screen.
-
 - Already played guesses are displayed both as pegs and as color-indicators.
 
 **Source-wise**, a big part of the code has been rewritten, mostly due to the
-introduction of the `Color` "class" (files: colors.h/color.h).
+introduction of the `Color` "class" (files: colors.c & color.h).
 
 Gameplay
 --------
